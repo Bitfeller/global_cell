@@ -1,8 +1,13 @@
 use std::fmt::{ Display, Formatter };
 use std::error::Error;
 use std::sync::Arc;
-use tokio::sync::{ OnceCell, RwLock };
+use tokio::sync::{ OnceCell, RwLock, RwLockReadGuard, RwLockWriteGuard };
+#[cfg(feature = "serialize")]
+use serde::{ Serialize, Deserialize };
+#[cfg(feature = "watch")]
+use tokio::sync::watch;
 
+#[cfg(feature = "test-crate")]
 #[cfg(test)]
 mod tests;
 
@@ -11,6 +16,8 @@ pub enum CellError {
     NotSet,
     AlreadySet,
     Poisoned,
+    #[cfg(feature = "watch")]
+    NotifierInitFailed,
 }
 impl Display for CellError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -18,21 +25,108 @@ impl Display for CellError {
             CellError::NotSet => write!(f, "Cell is not set"),
             CellError::AlreadySet => write!(f, "Cell is already set"),
             CellError::Poisoned => write!(f, "Cell is poisoned"),
+            #[cfg(feature = "watch")]
+            CellError::NotifierInitFailed => write!(f, "Notifier initialization failed"),
         }
     }
 }
 impl Error for CellError {}
 
+/// SafeBuilt: A marker struct indicating that a CellLock or MutCellLock is safe to use.
+/// This struct ensures that a lock cannot be built outside of the Cell implementation.
+/// This is to prevent users from creating locks without going through the Cell API,
+/// which would be unsafe.
+/// 
+/// SafeBuilt is not meant to be cloneable, copyable, or instantiated outside of this module.
+struct SafeBuilt<'a, T> {
+    _marker: std::marker::PhantomData<&'a T>,
+}
+impl<'a, T> SafeBuilt<'a, T> {
+    const fn new() -> Self {
+        Self { _marker: std::marker::PhantomData }
+    }
+}
+
 /// CellLock: A lock acquired on a Cell when accessing.
 /// Released when dropped.
 pub struct CellLock<'a, T: Send + Sync> {
-    guard: tokio::sync::RwLockReadGuard<'a, Option<T>>,
+    guard: RwLockReadGuard<'a, Option<T>>,
+    _marker: SafeBuilt<'a, T>,
 }
 impl<'a, T: Send + Sync> CellLock<'a, T> {
+    /// Create a new CellLock from a RwLockReadGuard.
+    fn from(guard: RwLockReadGuard<'a, Option<T>>) -> Self {
+        Self { guard, _marker: SafeBuilt::new() }
+    }
+
     /// Get a reference to the value inside the cell.
     /// Returns None if the cell is not set.
-    pub fn get(&self) -> Option<&T> {
-        self.guard.as_ref()
+    pub fn get(&self) -> &T {
+        self.guard.as_ref().unwrap()
+    }
+
+    /// Drop the lock, releasing it.
+    pub fn drop(self) {
+        drop(self.guard);
+    }
+}
+impl<'a, T: Send + Sync> std::ops::Deref for CellLock<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.guard.as_ref().unwrap()
+    }
+}
+impl<'a, T: Send + Sync + PartialEq> PartialEq for CellLock<'a, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.get() == other.get()
+    }
+}
+
+/// MutCellLock: A mutable lock acquired on a Cell when accessing.
+/// Released when dropped.
+pub struct MutCellLock<'a, T: Send + Sync> {
+    guard: RwLockWriteGuard<'a, Option<T>>,
+    _marker: SafeBuilt<'a, T>,
+}
+impl<'a, T: Send + Sync> MutCellLock<'a, T> {
+    /// Create a new MutCellLock from a RwLockWriteGuard.
+    fn from(guard: RwLockWriteGuard<'a, Option<T>>) -> Self {
+        Self { guard, _marker: SafeBuilt::new() }
+    }
+
+    /// Get an immutable reference to the value inside the cell.
+    /// Returns None if the cell is not set.
+    pub fn get(&self) -> &T {
+        self.guard.as_ref().unwrap()
+    }
+
+    /// Get a mutable reference to the value inside the cell.
+    /// Returns None if the cell is not set.
+    pub fn get_mut(&mut self) -> &mut T {
+        self.guard.as_mut().unwrap()
+    }
+
+    /// Drop the lock, releasing it.
+    pub fn drop(self) {
+        drop(self.guard);
+    }
+}
+impl<'a, T: Send + Sync> std::ops::Deref for MutCellLock<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.guard.as_ref().unwrap()
+    }
+}
+impl<'a, T: Send + Sync> std::ops::DerefMut for MutCellLock<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.guard.as_mut().unwrap()
+    }
+}
+impl<'a, T: Send + Sync + PartialEq> PartialEq for MutCellLock<'a, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.get() == other.get()
     }
 }
 
@@ -40,18 +134,42 @@ impl<'a, T: Send + Sync> CellLock<'a, T> {
 /// The cell can be accessed and modified from anywhere in the program.
 /// The cell is thread-safe and can be used in multi-threaded environments.
 /// The cell is implemented using a Mutex to ensure that only one thread can access the cell at a time.
-pub struct Cell<T: Send + Sync> {
+pub struct Cell<'a, T: Send + Sync> {
     cell: OnceCell<Arc<RwLock<Option<T>>>>,
-
+    lifetime: std::marker::PhantomData<&'a T>,
+    #[cfg(feature = "watch")]
+    notifier: OnceCell<watch::Sender<()>>,
 }
-impl<T: Send + Sync> Cell<T> {
+impl<'a, T: Send + Sync> Cell<'a, T> {
     /// Creates a new empty Cell instance.
     pub const fn new() -> Self {
         Self {
             cell: OnceCell::const_new(),
+            lifetime: std::marker::PhantomData,
+            #[cfg(feature = "watch")]
+            notifier: OnceCell::const_new(),
         }
     }
-    
+
+    /// Creates a new Cell instance with the given initial value.
+    pub fn from(value: T) -> Self {
+        let cell = OnceCell::new();
+        cell.set(Arc::new(RwLock::new(Some(value))))
+            .expect_err("Cell::from failed: OnceCell semaphore held a bad permit");
+        Self {
+            cell,
+            lifetime: std::marker::PhantomData,
+            #[cfg(feature = "watch")]
+            notifier: {
+                let notifier = OnceCell::new();
+                let (tx, _rx) = watch::channel(());
+                notifier.set(tx)
+                    .expect_err("Cell::from failed: notifier OnceCell semaphore held a bad permit");
+                notifier
+            }
+        }
+    }
+
     /// Initialize the cell.
     /// Sets the default value of the cell to None.
     /// 
@@ -69,18 +187,29 @@ impl<T: Send + Sync> Cell<T> {
         let lock = Arc::new(RwLock::new(None));
         self.cell.set(lock)
             .map_err(|_| CellError::AlreadySet)?;
+        #[cfg(feature = "watch")]
+        {
+            let (tx, _rx) = watch::channel(());
+            self.notifier.set(tx)
+                .map_err(|_| CellError::NotifierInitFailed)?;
+        }
         Ok(())
     }
 
     /// Sets the value of the cell; overrides the previous value if there was any.
     pub async fn set(&self, value: T) -> Result<(), CellError> {
+        if !self.is_init() {
+            self.init().await?;
+        }
+        #[cfg(feature = "watch")]
+        {
+            if let Some(notifier) = self.notifier.get() {
+                let _ = notifier.send(());
+            }
+        }
         if let Some(lock) = self.cell.get() {
             let mut guard = lock.write().await;
             *guard = Some(value);
-        } else {
-            let lock = Arc::new(RwLock::new(Some(value)));
-            self.cell.set(lock)
-                .map_err(|_| CellError::Poisoned)?;
         }
         Ok(())
     }
@@ -91,6 +220,17 @@ impl<T: Send + Sync> Cell<T> {
             let mut guard = lock.write().await;
             guard.take()
                 .ok_or(CellError::NotSet)
+        } else {
+            Err(CellError::NotSet)
+        }
+    }
+
+    /// Empty the cell, setting its value to None.
+    pub async fn clear(&self) -> Result<(), CellError> {
+        if let Some(lock) = self.cell.get() {
+            let mut guard = lock.write().await;
+            *guard = None;
+            Ok(())
         } else {
             Err(CellError::NotSet)
         }
@@ -119,7 +259,11 @@ impl<T: Send + Sync> Cell<T> {
     pub async fn lock(&self) -> Result<CellLock<'_, T>, CellError> {
         if let Some(lock) = self.cell.get() {
             let guard = lock.read().await;
-            Ok(CellLock { guard })
+            if guard.is_none() {
+                drop(guard);
+                return Err(CellError::NotSet);
+            }
+            Ok(CellLock::from(guard))
         } else {
             Err(CellError::NotSet)
         }
@@ -127,5 +271,122 @@ impl<T: Send + Sync> Cell<T> {
 
     /// Acquire a write lock on the cell.
     /// Returns an error if the cell is not initialized.
-    
+    pub async fn lock_mut(&self) -> Result<MutCellLock<'_, T>, CellError> {
+        if let Some(lock) = self.cell.get() {
+            let guard = lock.read().await;
+            if guard.is_none() {
+                drop(guard);
+                return Err(CellError::NotSet);
+            }
+            drop(guard);
+            let guard = lock.write().await;
+            Ok(MutCellLock::from(guard))
+        } else {
+            Err(CellError::NotSet)
+        }
+    }
+
+    /// Apply a function to the inner value, if it is set.
+    /// Otherwise, return None.
+    pub async fn with<F, R>(&self, func: F) -> Option<R>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        if let Some(lock) = self.cell.get() {
+            let guard = lock.read().await;
+            guard.as_ref().map(func)
+        } else {
+            None
+        }
+    }
+
+    /// Apply a mutable function to the inner value, if it is set.
+    /// Otherwise, return None.
+    pub async fn with_mut<F, R>(&self, func: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        if let Some(lock) = self.cell.get() {
+            let mut guard = lock.write().await;
+            guard.as_mut().map(func)
+        } else {
+            None
+        }
+    }
+
+    /// Apply a function to the inner value, if it is set.
+    /// Returns an error if the cell is not initialized.
+    pub async fn try_with<F, R>(&self, func: F) -> Result<Option<R>, CellError>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        if let Some(lock) = self.cell.get() {
+            let guard = lock.read().await;
+            Ok(guard.as_ref().map(func))
+        } else {
+            Err(CellError::NotSet)
+        }
+    }
+
+    /// Apply a mutable function to the inner value, if it is set.
+    /// Returns an error if the cell is not initialized.
+    pub async fn try_with_mut<F, R>(&self, func: F) -> Result<Option<R>, CellError>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        if let Some(lock) = self.cell.get() {
+            let mut guard = lock.write().await;
+            Ok(guard.as_mut().map(func))
+        } else {
+            Err(CellError::NotSet)
+        }
+    }
+
+    /// Subscribe to changes to the cell.
+    /// Returns a watch::Receiver that will receive a notification whenever the cell is changed.
+    /// Returns an error if the cell is not initialized.
+    #[cfg(feature = "watch")]
+    pub fn subscribe(&self) -> Result<watch::Receiver<()>, CellError> {
+        if let Some(notifier) = self.notifier.get() {
+            Ok(notifier.subscribe())
+        } else {
+            Err(CellError::NotSet)
+        }
+    }
+}
+impl<'a, T: Send + Sync + Default> Default for Cell<'a, T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+#[cfg(feature = "serialize")]
+impl<'a, T: Send + Sync + Serialize> Serialize for Cell<'a, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if let Some(lock) = self.cell.get() {
+            let guard = lock.blocking_read();
+            match &*guard {
+                Some(value) => value.serialize(serializer),
+                None => serializer.serialize_none(),
+            }
+        } else {
+            serializer.serialize_none()
+        }
+    }
+}
+#[cfg(feature = "serialize")]
+impl<'de, 'a, T: Send + Sync + Deserialize<'de>> Deserialize<'de> for Cell<'a, T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Option::<T>::deserialize(deserializer)?;
+        if let Some(v) = value {
+            Ok(Self::from(v))
+        } else {
+            Ok(Self::new())
+        }
+    }
 }
