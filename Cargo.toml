@@ -9,7 +9,7 @@ tokio = { version = "1.47.1", features = ["sync"] }
 serde = { version = "1.0", features = ["derive"], optional = true }
 
 [features]
-default = ["serialize", "watch"]
+default = []
 
 test-crate = ["tokio/macros", "tokio/rt-multi-thread"]
 serialize = ["serde"]
