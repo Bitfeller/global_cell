@@ -26,12 +26,12 @@ async fn inner_cell() {
     let inner_cell = Cell::new();
     inner_cell.set("Hello".to_string()).await.unwrap();
 
-    let mut lock = inner_cell.lock_mut().await.unwrap();
+    let mut lock = inner_cell.write().await.unwrap();
     
     // Modify the inner value
     lock.push_str(" world");
-    lock.drop();
+    drop(lock);
     
-    let lock = inner_cell.lock().await.unwrap();
+    let lock = inner_cell.read().await.unwrap();
     assert_eq!(*lock, "Hello world");
 }
