@@ -16,10 +16,10 @@ async fn test_global() {
 
 #[tokio::test]
 async fn test_overwrite() {
-    OVERWRITE_CELL.set(10).await.unwrap();
-    OVERWRITE_CELL.set(20).await.unwrap();
+    GLOBAL_CELL.set(10).await.unwrap();
+    GLOBAL_CELL.set(20).await.unwrap();
 
-    OVERWRITE_CELL
+    GLOBAL_CELL
         .with(|cell| {
             assert_eq!(*cell, 20);
         })

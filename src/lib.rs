@@ -1,11 +1,11 @@
-#[cfg(feature = "serialize")]
-use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
+use tokio::sync::{OnceCell, RwLock, RwLockReadGuard, RwLockWriteGuard};
+#[cfg(feature = "serialize")]
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "watch")]
 use tokio::sync::watch;
-use tokio::sync::{OnceCell, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[cfg(feature = "test-crate")]
 #[cfg(test)]
