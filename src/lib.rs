@@ -1,11 +1,11 @@
-use std::fmt::{ Display, Formatter };
-use std::error::Error;
-use std::sync::Arc;
-use tokio::sync::{ OnceCell, RwLock, RwLockReadGuard, RwLockWriteGuard };
 #[cfg(feature = "serialize")]
-use serde::{ Serialize, Deserialize };
+use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+use std::sync::Arc;
 #[cfg(feature = "watch")]
 use tokio::sync::watch;
+use tokio::sync::{OnceCell, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[cfg(feature = "test-crate")]
 #[cfg(test)]
@@ -135,13 +135,13 @@ impl<T: Send + Sync> Cell<T> {
                     panic!("Cell::from failed: notifier OnceCell semaphore held a bad permit");
                 }
                 notifier
-            }
+            },
         }
     }
 
     /// Initialize the cell.
     /// Sets the default value of the cell to None.
-    /// 
+    ///
     /// This does not have to be called before using the cell, but can be used to ensure that the cell is initialized before use,
     /// for performance reasons.
     ///
@@ -154,12 +154,12 @@ impl<T: Send + Sync> Cell<T> {
             return Ok(());
         }
         let lock = Arc::new(RwLock::new(None));
-        self.cell.set(lock)
-            .map_err(|_| CellError::AlreadySet)?;
+        self.cell.set(lock).map_err(|_| CellError::AlreadySet)?;
         #[cfg(feature = "watch")]
         {
             let (tx, _rx) = watch::channel(());
-            self.notifier.set(tx)
+            self.notifier
+                .set(tx)
                 .map_err(|_| CellError::NotifierInitFailed)?;
         }
         Ok(())
@@ -193,8 +193,7 @@ impl<T: Send + Sync> Cell<T> {
                     let _ = notifier.send(());
                 }
             }
-            guard.take()
-                .ok_or(CellError::NotSet)
+            guard.take().ok_or(CellError::NotSet)
         } else {
             Err(CellError::NotSet)
         }
@@ -234,7 +233,7 @@ impl<T: Send + Sync> Cell<T> {
             false
         }
     }
-    
+
     /// Acquire a read lock on the cell.
     /// Returns an error if the cell is not initialized.
     pub async fn read(&self) -> Result<CellLock<'_, T>, CellError> {
@@ -360,7 +359,7 @@ impl<T: Send + Sync> Cell<T> {
     /// Peek at the inner value without acquiring a lock.
     /// Returns None if the cell is not initialized or if the inner value is not set.
     /// Requires T: Clone.
-    pub fn get(&self) -> Option<T> 
+    pub fn get(&self) -> Option<T>
     where
         T: Clone,
     {
@@ -376,7 +375,7 @@ impl<T: Send + Sync> Cell<T> {
     /// Returns None if the cell is not initialized or if the inner value is not set.
     /// Requires T: Copy.
     /// This is more efficient than get() for Copy types.
-    pub fn get_copy(&self) -> Option<T> 
+    pub fn get_copy(&self) -> Option<T>
     where
         T: Copy,
     {
@@ -428,8 +427,7 @@ impl<T: Send + Sync + std::fmt::Debug> std::fmt::Debug for Cell<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let lock = self.block_read();
         let mut binding = f.debug_struct("Cell");
-        let dbg = binding
-            .field("is_init", &self.is_init());
+        let dbg = binding.field("is_init", &self.is_init());
         if let Ok(guard) = lock {
             dbg.field("value", guard.get());
         }
