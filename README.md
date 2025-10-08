@@ -1,30 +1,22 @@
 # Global Cell
-
-A thread-safe, async-friendly global cell implementation for Rust, built on Tokio primitives.
+A thread-safe, async-friendly global mutable cell implementation for Rust, built on Tokio primitives.
 
 ## Features
-
-- **Thread-safe**: Safe to use across multiple threads
-- **Async-friendly**: Designed for async/await patterns with Tokio
+- **Thread-safe**: Built to be shared and accessed quickly between threads
+- **Async-friendly**: Designed on async/await patterns with Tokio
 - **Global state**: Can be used as a static global variable
+- **Easy mutability**: Easily read/write access ensures type + cell safety at compile-time
 - **Optional features**:
   - `serialize`: Serde serialization support
   - `watch`: Subscribe to cell changes with watch channels
-  - `test-crate`: Enable testing support
 
 ## Installation
-
-Add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-global_cell = "0.1.0"
-```
+Install the binary and utilize.
+The crate will be shortly published to crates.io!
 
 ## Usage
 
 ### Basic Usage
-
 ```rust
 use global_cell::Cell;
 
@@ -43,7 +35,6 @@ async fn main() {
 ```
 
 ### Working with Mutable Data
-
 ```rust
 use global_cell::Cell;
 
@@ -64,7 +55,6 @@ async fn main() {
 ```
 
 ### Using `with_mut` for Modifications
-
 ```rust
 use global_cell::Cell;
 
@@ -80,10 +70,29 @@ async fn main() {
 }
 ```
 
+### Using locks to capture and/or modify
+```rust
+use global_cell::Cell;
+
+#[tokio::main]
+async fn main() {
+    let cell = Cell::new();
+    cell.set(vec![1, 2, 3]).await.unwrap();
+
+    let lock = cell.read().await.unwrap();
+    println!("{}", lock[0]);
+
+    // Drop the lock so that we can acquire a write lock
+    drop(lock);
+
+    let write_lock = cell.write().await.unwrap();
+    lock.push(4);
+}
+```
+
 ## API Overview
 
 ### Cell Operations
-
 - `new()` - Create a new empty cell
 - `from(value)` - Create a cell with an initial value
 - `set(value)` - Set or update the cell value
@@ -93,30 +102,25 @@ async fn main() {
 - `clear()` - Clear the cell value
 
 ### Locking
-
 - `read()` - Acquire an async read lock
 - `write()` - Acquire an async write lock
 - `block_read()` - Acquire a blocking read lock
 - `block_write()` - Acquire a blocking write lock
 
 ### Functional Access
-
 - `with(func)` - Apply a function to the value
 - `with_mut(func)` - Apply a mutable function to the value
 - `try_with(func)` - Like `with`, but returns `Result`
 - `try_with_mut(func)` - Like `with_mut`, but returns `Result`
 
 ### Status
-
 - `is_init()` - Check if the cell is initialized
 - `is_set()` - Check if a value is set
 
 ### Watch (with `watch` feature)
-
 - `subscribe()` - Subscribe to cell changes
 
 ## Features
-
 Enable optional features in your `Cargo.toml`:
 
 ```toml
@@ -125,5 +129,4 @@ global_cell = { version = "0.1.0", features = ["serialize", "watch"] }
 ```
 
 ## License
-
 This project is licensed under the MIT License or Apache License 2.0, at your option.
