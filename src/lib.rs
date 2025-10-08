@@ -390,7 +390,7 @@ impl<T: Send + Sync> Cell<T> {
 }
 impl<T: Send + Sync + Default> Default for Cell<T> {
     fn default() -> Self {
-        Self::new()
+        Self::from(T::default())
     }
 }
 #[cfg(feature = "serialize")]
