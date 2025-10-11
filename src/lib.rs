@@ -15,6 +15,7 @@ mod tests;
 pub enum CellError {
     NotSet,
     AlreadySet,
+    InitializationFailed,
     #[cfg(feature = "watch")]
     NotifierInitFailed,
 }
@@ -23,6 +24,7 @@ impl Display for CellError {
         match self {
             CellError::NotSet => write!(f, "Cell is not set"),
             CellError::AlreadySet => write!(f, "Cell is already set"),
+            CellError::InitializationFailed => write!(f, "Cell initialization failed"),
             #[cfg(feature = "watch")]
             CellError::NotifierInitFailed => write!(f, "Notifier initialization failed"),
         }
@@ -154,13 +156,26 @@ impl<T: Send + Sync> Cell<T> {
             return Ok(());
         }
         let lock = Arc::new(RwLock::new(None));
-        self.cell.set(lock).map_err(|_| CellError::AlreadySet)?;
+        self.cell.set(lock).map_err(|e| {
+            // check for SetError::AlreadyInitializedError
+            if e.is_already_init_err() {
+                CellError::AlreadySet
+            } else {
+                CellError::InitializationFailed
+            }
+        })?;
         #[cfg(feature = "watch")]
         {
             let (tx, _rx) = watch::channel(());
             self.notifier
                 .set(tx)
-                .map_err(|_| CellError::NotifierInitFailed)?;
+                .map_err(|e| {
+                    if e.is_already_init_err() {
+                        CellError::AlreadySet
+                    } else {
+                        CellError::NotifierInitFailed
+                    }
+                })?;
         }
         Ok(())
     }
@@ -168,7 +183,17 @@ impl<T: Send + Sync> Cell<T> {
     /// Sets the value of the cell; overrides the previous value if there was any.
     pub async fn set(&self, value: T) -> Result<(), CellError> {
         if !self.is_init() {
-            self.init().await?;
+            // It's very possible self.init() returns an error.
+            // However, if it does, we know the cell is already initialized and ready to use.
+            // Yet if this does fail, there are several possibilities in which either the cell
+            // was truly not initialized yet, in which case we should return an Error,
+            // or two threads are racing to set the same cell.
+            if let Err(e) = self.init().await {
+                match e {
+                    CellError::AlreadySet => {} // Already initialized. Race condition.
+                    _ => return Err(e),         // Propagate the error.
+                }
+            }
         }
         #[cfg(feature = "watch")]
         {
@@ -181,6 +206,12 @@ impl<T: Send + Sync> Cell<T> {
             *guard = Some(value);
         }
         Ok(())
+    }
+
+    /// Sets the value of the cell, ignoring any errors that may occur.
+    /// Overrides the previous value if there was any.
+    pub async fn force_set(&self, value: T) {
+        let _ = self.set(value).await;
     }
 
     /// Take the value of the cell, leaving None in its place.
