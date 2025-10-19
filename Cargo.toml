@@ -15,7 +15,7 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 futures = { version = "0.3", optional = true }
 
 [features]
-default = ["test-crate"]
+default = []
 
 test-crate = ["tokio/macros", "tokio/rt-multi-thread", "futures"]
 serialize = ["serde"]
