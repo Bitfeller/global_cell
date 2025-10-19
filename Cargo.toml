@@ -10,12 +10,13 @@ keywords = ["async", "tokio", "global", "cell", "thread-safe"]
 categories = ["asynchronous", "concurrency"]
 
 [dependencies]
-tokio = { version = "1.47.1", features = ["sync"] }
+tokio = { version = "1.47.1", features = ["sync", "rt", "rt-multi-thread"] }
 serde = { version = "1.0", features = ["derive"], optional = true }
+futures = { version = "0.3", optional = true }
 
 [features]
-default = []
+default = ["test-crate"]
 
-test-crate = ["tokio/macros", "tokio/rt-multi-thread"]
+test-crate = ["tokio/macros", "tokio/rt-multi-thread", "futures"]
 serialize = ["serde"]
 watch = []
