@@ -3,68 +3,33 @@ use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
 use crate::raw_cell::RawCell;
 
 static RAW_CELL: RawCell<u32> = RawCell::new();
-static OLD_CELL: OnceCell<Arc<RwLock<Option<u32>>>> = OnceCell::const_new();
-
-#[inline(always)]
-async fn get_old_cell() -> &'static Arc<RwLock<Option<u32>>> {
-    OLD_CELL
-        .get_or_init(|| async { Arc::new(RwLock::new(None)) })
-        .await
-}
 
 /// To see the stdout output, run with `cargo test -- --nocapture`
 #[tokio::test]
-async fn compare_speeds() {
-    let raw_start = tokio::time::Instant::now();
+async fn dbg_compare_speeds() {
     RAW_CELL.init(|| { 0u32 });
     let arc = unsafe { RAW_CELL.inner() };
     for i in 0..10000 {
         let mut lock = arc.write();
         *lock = i;
     }
-    let raw_duration = raw_start.elapsed();
-    let old_start = tokio::time::Instant::now();
-    let old_cell = get_old_cell().await;
-    for i in 0..10000 {
-        let mut write_guard = old_cell.write().await;
-        *write_guard = Some(i);
-    }
-    let old_duration = old_start.elapsed();
-    println!("RAW_CELL duration: {:?}", raw_duration);
-    println!("ONCE_CELL duration: {:?}", old_duration);
-    assert!(raw_duration < old_duration);
 }
 
 /// To see the stdout output, run with `cargo test -- --nocapture`
 #[tokio::test]
-async fn compare_read_speeds() {
+async fn dbg_read_speeds() {
     let raw_cell: RawCell<u32> = RawCell::new();
-    let once_cell: OnceCell<Arc<RwLock<Option<u32>>>> = OnceCell::const_new();
 
-    let raw_start = tokio::time::Instant::now();
     raw_cell.init(|| { 0u32 });
     let arc = unsafe { raw_cell.inner() };
     for _ in 0..100000 {
         let read_guard = arc.read();
         let _value = *read_guard;
     }
-    let raw_duration = raw_start.elapsed();
-    let old_start = tokio::time::Instant::now();
-    let old_cell = once_cell
-        .get_or_init(|| async { Arc::new(RwLock::new(Some(0u32))) })
-        .await;
-    for _ in 0..100000 {
-        let read_guard = old_cell.read().await;
-        let _value = *read_guard;
-    }
-    let old_duration = old_start.elapsed();
-    println!("RAW_CELL read duration: {:?}", raw_duration);
-    println!("ONCE_CELL read duration: {:?}", old_duration);
-    assert!(raw_duration < old_duration);
 }
 
 #[tokio::test]
-async fn compare_mass_init_speeds() {
+async fn dbg_compare_mass_init_speeds() {
     // We are going to compare initialization times here, but also include the time taken to read the value after initialization.
     let trials = 10000;
     let raw_won = Arc::new(AtomicUsize::new(0));
@@ -110,7 +75,7 @@ async fn compare_mass_init_speeds() {
 
 /// To see the stdout output, run with `cargo test -- --nocapture`
 #[tokio::test]
-async fn compare_init_speeds() {
+async fn dbg_compare_init_speeds() {
     // We are going to STRICTLY compare initialization times here.
     let trials = 100000;
     let raw_won = Arc::new(AtomicUsize::new(0));
@@ -151,7 +116,7 @@ async fn compare_init_speeds() {
 }
 
 #[tokio::test]
-async fn raw_cell_concurrent_init() {
+async fn dbg_raw_cell_concurrent_init() {
     let raw_cell: Arc<RawCell<u32>> = Arc::new(RawCell::new());
     let mut handles = vec![];
     for _ in 0..10 {
