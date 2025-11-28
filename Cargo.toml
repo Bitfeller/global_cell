@@ -13,14 +13,12 @@ categories = ["asynchronous", "concurrency"]
 parking_lot = { version = "0.12.5", default-features = false }
 futures-util = { version = "0.3.28", features = ["std"], default-features = false }
 
-tokio = { version = "1.47.1", features = ["rt"], default-features = false, optional = true }
-async-std = { version = "1.13.2", features = ["alloc", "std"], default-features = false, optional = true }
+tokio = { version = "1.47.1", features = ["rt", "macros", "time", "sync"], default-features = false, optional = true }
+futures-executor = "0.3.31"
 
 [features]
 default = []
-test-crate = ["dep:tokio", "tokio/macros", "tokio/time", "tokio/sync"]
-tokio = ["dep:tokio"]
-async-std = ["dep:async-std"]
+test-crate = ["dep:tokio"]
 
 [profile.release]
 opt-level = 3

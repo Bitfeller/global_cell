@@ -4,13 +4,11 @@ use crate::RawCell;
 async fn dbg_multi_init() {
     static RAW_CELL: RawCell<u32> = RawCell::<u32>::new();
     // spawn multiple tasks to test concurrent initialization
-    let handles: Vec<_> = (0..10)
+    let handles: Vec<_> = (0..150)
         .map(|_| {
             let cell_ref = &RAW_CELL;
             tokio::spawn(async move {
-                cell_ref.init_async(|| async { 
-                    // wait 1 seconds to simulate work
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                cell_ref.init_async(|| async {
                     42
                 }).await;
             })

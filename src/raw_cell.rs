@@ -3,10 +3,10 @@ use std::{
     hint::{likely, unlikely}, 
     mem::MaybeUninit, 
     panic::AssertUnwindSafe, 
-    sync::{Mutex, atomic::{AtomicBool, AtomicU8, Ordering}},
+    sync::{atomic::{AtomicBool, AtomicU8, Ordering}},
     future::Future
 };
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard, Mutex};
 use futures_util::future::FutureExt;
 use crate::{traits::CellTrait, utils::yield_now};
 
@@ -75,7 +75,7 @@ impl<T: Send + Sync> const CellTrait<T> for RawCell<T> {
     }
 }
 /// Require T: Send + Sync for concurrent access operations. Why?
-/// - RwLock requires T: Send + Sync to be Send + Sync itself.
+/// - RwLock prefers T: Send + Sync to be Send + Sync itself.
 /// - RawCell is designed for concurrent access; without Send + Sync, it would be
 ///   unsafe to share across threads.
 /// - Enforcing Send + Sync at the type level prevents misuse and potential data races.
@@ -464,6 +464,7 @@ impl<T> Drop for RawMutexCell<T> {
 
 /// # RawOnceCell
 /// A RawCell variant that can only be initialized once. Helpful for a lazy-initialized static.
+/// RawOnceCell can never be dropped once initialized.
 #[repr(C, align(128))]
 pub struct RawOnceCell<T> {
     state: AtomicU8,
@@ -625,25 +626,10 @@ impl<T> RawOnceCell<T> {
         debug_assert!(self.is_initialized(), "RawOnceCell is not initialized");
         &*(*self.value.get()).as_ptr()
     }
-
-    /// Fetches the inner value mutably, assuming initialization has already occurred.
-    /// Used internally for dropping.
-    #[inline(always)]
-    unsafe fn inner_mut(&self) -> &mut T {
-        debug_assert!(self.is_initialized(), "RawOnceCell is not initialized");
-        &mut *(*self.value.get()).as_mut_ptr()
-    }
 }
-impl<T> Drop for RawOnceCell<T> {
-    fn drop(&mut self) {
-        if self.is_initialized() {
-            unsafe {
-                std::ptr::drop_in_place(self.inner_mut());
-            }
-        }
-    }
-}
+// Drop is intentionally not implemented for RawOnceCell to prevent dropping once initialized.
 
+/// # RawDirectCell
 /// RawDirectCell is a low-level primitive that offers direct access to its inner value,
 /// without any locks or synchronization mechanisms. It is designed for single-threaded
 /// contexts or scenarios where the user can guarantee exclusive access to the cell.
