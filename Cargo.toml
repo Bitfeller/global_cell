@@ -2,12 +2,13 @@
 name = "global_cell"
 version = "0.2.0"
 edition = "2024"
-authors = ["Bitfeller"]
+authors = ["Bitfeller <bitfeller.dev@gmail.com>"]
 description = "A thread-safe, async-friendly, performant global cell alternative built on Rust and Tokio primitives"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Bitfeller/global_cell"
 keywords = ["async", "tokio", "global", "cell", "thread-safe"]
 categories = ["asynchronous", "concurrency"]
+readme = "README.md"
 
 [dependencies]
 parking_lot = { version = "0.12.5", default-features = false }
