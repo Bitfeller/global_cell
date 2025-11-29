@@ -210,6 +210,13 @@ impl<T: Send + Sync> Cell<T> {
             init_async_fn: None,
         }
     }
+    pub const fn from(v: T) -> Self {
+        Self {
+            raw: RawCell::from(v),
+            init_fn: None,
+            init_async_fn: None,
+        }
+    }
 
     pub fn init(&self, value: T) {
         self.raw.init(|| value)
@@ -304,13 +311,15 @@ impl<T: Send + Sync> Cell<T> {
         MutCellLock::from(unsafe { self.raw.write() })
     }
 
+    // FIXME: not async
     pub async fn read_async(&self) -> CellLock<'_, T> {
-            if unlikely(!self.is_initialized()) {
-                self.try_init_async().await.expect("Cell was not initialized, and initialization failed");
-            }
-            // SAFETY: the cell has been initialized.
-            CellLock::from(unsafe { self.raw.read() })
+        if unlikely(!self.is_initialized()) {
+            self.try_init_async().await.expect("Cell was not initialized, and initialization failed");
+        }
+        // SAFETY: the cell has been initialized.
+        CellLock::from(unsafe { self.raw.read() })
     }
+    // FIXME: not async
     pub async fn write_async(&self) -> MutCellLock<'_, T> {
         if unlikely(!self.is_initialized()) {
             self.try_init_async().await.expect("Cell was not initialized, and initialization failed");
@@ -455,6 +464,13 @@ impl<T: Send> MutexCell<T> {
             init_async_fn: None,
         }
     }
+    pub const fn from(v: T) -> Self {
+        Self {
+            raw: RawMutexCell::from(v),
+            init_fn: None,
+            init_async_fn: None,
+        }
+    }
 
     pub fn init(&self, value: T) {
         self.raw.init(|| value)
@@ -544,7 +560,7 @@ impl<T: Send> MutexCell<T> {
     }
 
     /// Locks the cell asynchronously and returns a mutable reference to the inner value.
-    /// FIXME: This is not truly async, as parking_lot does not support async locking.
+    // FIXME: this is not async
     pub async fn lock_async(&self) -> CellMutexLock<'_, T> {
         if unlikely(!self.is_initialized()) {
             self.try_init_async().await.expect("MutexCell was not initialized, and initialization failed");
@@ -672,6 +688,13 @@ impl<T: Send + Sync> OnceCell<T> {
         Self {
             raw: RawOnceCell::new(),
             init_fn: Some(T::default),
+            init_async_fn: None,
+        }
+    }
+    pub const fn from(v: T) -> Self {
+        Self {
+            raw: RawOnceCell::from(v),
+            init_fn: None,
             init_async_fn: None,
         }
     }

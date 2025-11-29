@@ -106,6 +106,16 @@ impl<T: Send + Sync> RawCell<T> {
         }
     }
 
+    /// Creates a new, initialized RawCell with the provided value.
+    /// RawCell will be initialized upon creation.
+    #[inline(always)]
+    pub const fn from(value: T) -> Self {
+        Self {
+            state: AtomicU8::new(Self::INITED),
+            value: UnsafeCell::new(MaybeUninit::new(RwLock::new(value))),
+        }
+    }
+
     /// Checks if the RawCell has been initialized.
     #[inline(always)]
     pub fn is_initialized(&self) -> bool {
@@ -332,6 +342,16 @@ impl<T> RawMutexCell<T> {
         }
     }
 
+    /// Creates a new, initialized RawMutexCell with the provided value.
+    /// RawMutexCell will be initialized upon creation.
+    #[inline(always)]
+    pub const fn from(value: T) -> Self {
+        Self {
+            state: AtomicU8::new(Self::INITED),
+            value: UnsafeCell::new(MaybeUninit::new(Mutex::new(value))),
+        }
+    }
+
     /// Checks if the RawMutexCell has been initialized.
     #[inline(always)]
     pub fn is_initialized(&self) -> bool {
@@ -496,6 +516,16 @@ impl<T> RawOnceCell<T> {
     #[inline(always)]
     pub fn is_initialized(&self) -> bool {
         self.state.load(Ordering::Acquire) == Self::INITED
+    }
+
+    /// Creates a new, initialized RawOnceCell with the provided value.
+    /// RawOnceCell will be initialized upon creation.
+    #[inline(always)]
+    pub const fn from(value: T) -> Self {
+        Self {
+            state: AtomicU8::new(Self::INITED),
+            value: UnsafeCell::new(MaybeUninit::new(value)),
+        }
     }
 
     /// Initializes the RawOnceCell if it has not been initialized yet.
