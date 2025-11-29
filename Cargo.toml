@@ -2,7 +2,7 @@
 name = "global_cell"
 version = "0.2.0"
 edition = "2024"
-authors = ["Bitfeller <bitfeller.dev@gmail.com>"]
+authors = ["Bitfeller"]
 description = "A thread-safe, async-friendly, performant global cell alternative built on Rust and Tokio primitives"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Bitfeller/global_cell"
