@@ -49,7 +49,7 @@ impl<'a> Drop for ResetOnDrop<'a> {
 /// By default, the cell itself is not initialized; RawCell assumes a lazy implementation unless its
 /// init field is explicitly called by the user at some point in time.
 /// 
-/// Even when initialized, the inner value is not necessarily guarenteed to be set; that is,
+/// Even when initialized, the inner value is not necessarily guaranteed to be set; that is,
 /// it may be "empty" or essentially set to None. In that case, reads/writes to the inner value
 /// will return an Err.
 #[repr(C, align(128))]
@@ -245,28 +245,32 @@ impl<T: Send + Sync> RawCell<T> {
     #[inline(always)]
     pub unsafe fn inner(&self) -> &RwLock<T> {
         debug_assert!(self.is_initialized(), "RawCell is not initialized");
-        (*self.value.get()).assume_init_ref()
+        // SAFETY: caller ensured initialization
+        unsafe { (*self.value.get()).assume_init_ref() }
     }
 
     /// Fetches the inner value mutably, assuming initialization has already occurred.
     #[inline(always)]
     pub unsafe fn inner_mut(&self) -> &mut RwLock<T> {
         debug_assert!(self.is_initialized(), "RawCell is not initialized");
-        (*self.value.get()).assume_init_mut()
+        // SAFETY: caller ensured initialization
+        unsafe { (*self.value.get()).assume_init_mut() }
     }
 
     /// Fetches a read lock to the inner value, assuming initialization has already occurred.
     #[inline(always)]
     pub unsafe fn read(&self) -> RwLockReadGuard<'_, T> {
         debug_assert!(self.is_initialized(), "RawCell is not initialized");
-        (*self.value.get()).assume_init_ref().read()
+        // SAFETY: caller ensured initialization
+        unsafe { (*self.value.get()).assume_init_ref().read() }
     }
 
     /// Fetches a write lock to the inner value, assuming initialization has already occurred.
     #[inline(always)]
     pub unsafe fn write(&self) -> RwLockWriteGuard<'_, T> {
         debug_assert!(self.is_initialized(), "RawCell is not initialized");
-        (*self.value.get()).assume_init_ref().write()
+        // SAFETY: caller ensured initialization
+        unsafe { (*self.value.get()).assume_init_ref().write() }
     }
 }
 impl<T> Drop for RawCell<T> {
@@ -318,6 +322,8 @@ impl<T> RawMutexCell<T> {
     const INITING: u8 = 1;
     const INITED: u8 = 2;
 
+    // NOTE: MAX_SPIN must be less than 32 (for u32) or 64 (for u64)
+    // safe: 8 < 32 < 64
     const MAX_SPIN: u8 = 8;
 
     /// Creates a new, uninitialized RawMutexCell.
@@ -462,14 +468,16 @@ impl<T> RawMutexCell<T> {
     #[inline(always)]
     pub unsafe fn inner(&self) -> &Mutex<T> {
         debug_assert!(self.is_initialized(), "RawMutexCell is not initialized");
-        &*(*self.value.get()).as_ptr()
+        // SAFETY: caller ensured initialization
+        unsafe { &*(*self.value.get()).as_ptr() }
     }
 
     /// Fetches the inner value mutably, assuming initialization has already occurred.
     #[inline(always)]
     pub unsafe fn inner_mut(&self) -> &mut Mutex<T> {
         debug_assert!(self.is_initialized(), "RawMutexCell is not initialized");
-        &mut *(*self.value.get()).as_mut_ptr()
+        // SAFETY: caller ensured initialization
+        unsafe { &mut *(*self.value.get()).as_mut_ptr() }
     }
 }
 impl<T> Drop for RawMutexCell<T> {
@@ -498,7 +506,7 @@ impl<T> const CellTrait<T> for RawOnceCell<T> {
         Self::new()
     }
 }
-impl<T> RawOnceCell<T> {
+impl<'a, T> RawOnceCell<T> {
     const UNINIT: u8 = 0;
     const INITING: u8 = 1;
     const INITED: u8 = 2;
@@ -624,7 +632,7 @@ impl<T> RawOnceCell<T> {
                 }
                 Self::INITING => {
                     if step > 8 {
-                        std::thread::yield_now();
+                        yield_now().await;
                     } else {
                         for _ in 0..(1 << step) {
                             std::hint::spin_loop();
@@ -640,7 +648,7 @@ impl<T> RawOnceCell<T> {
 
     /// Initialize the RawOnceCell if not already initialized, returning a reference to the inner value.
     #[inline(always)]
-    pub fn get_or_init<F>(&self, init_fn: F) -> &'static T
+    pub fn get_or_init<F>(&self, init_fn: F) -> &'a T
     where
         F: FnOnce() -> T,
     {
@@ -652,9 +660,10 @@ impl<T> RawOnceCell<T> {
 
     /// Fetches the inner value, assuming initialization has already occurred.
     #[inline(always)]
-    pub unsafe fn inner(&self) -> &'static T {
+    pub unsafe fn inner(&self) -> &'a T {
         debug_assert!(self.is_initialized(), "RawOnceCell is not initialized");
-        &*(*self.value.get()).as_ptr()
+        // SAFETY: caller ensured initialization
+        unsafe { &*(*self.value.get()).as_ptr() }
     }
 }
 // Drop is intentionally not implemented for RawOnceCell to prevent dropping once initialized.
@@ -724,13 +733,17 @@ impl<T> RawDirectCell<T> {
     /// Fetches the inner value, assuming initialization has already occurred.
     #[inline(always)]
     pub unsafe fn inner(&self) -> &T {
-        &*(*self.value.get()).as_ptr()
+        debug_assert!(self.is_initialized(), "RawDirectCell is not initialized");
+        // SAFETY: caller ensured initialization
+        unsafe { &*(*self.value.get()).as_ptr() }
     }
 
     /// Fetches the inner value mutably, assuming initialization has already occurred.
     #[inline(always)]
     pub unsafe fn inner_mut(&self) -> &mut T {
-        &mut *(*self.value.get()).as_mut_ptr()
+        debug_assert!(self.is_initialized(), "RawDirectCell is not initialized");
+        // SAFETY: caller ensured initialization
+        unsafe { &mut *(*self.value.get()).as_mut_ptr() }
     }
 }
 impl<T> Drop for RawDirectCell<T> {
@@ -789,13 +802,17 @@ impl<T: Send + Sync> RawOptionCell<T> {
     /// Fetches a read lock to the inner Option<T>, assuming initialization has already occurred.
     #[inline(always)]
     pub unsafe fn read(&self) -> RwLockReadGuard<'_, Option<T>> {
-        self.inner.read()
+        debug_assert!(self.inner.is_initialized(), "RawOptionCell is not initialized");
+        // SAFETY: caller ensured initialization
+        unsafe { self.inner.read() }
     }
 
     /// Fetches a write lock to the inner Option<T>, assuming initialization has already occurred.
     #[inline(always)]
     pub unsafe fn write(&self) -> RwLockWriteGuard<'_, Option<T>> {
-        self.inner.write()
+        debug_assert!(self.inner.is_initialized(), "RawOptionCell is not initialized");
+        // SAFETY: caller ensured initialization
+        unsafe { self.inner.write() }
     }
 }
 // Drop is automatically handled by RawCell's Drop implementation.

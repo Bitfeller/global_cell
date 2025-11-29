@@ -1,5 +1,6 @@
 # Global Cell
 A thread-safe, async-friendly global mutable cell implementation for Rust, built on primitives.
+Note: this crate uses nightly 2024 features to optimize performance.
 
 ## Features
 - **Thread-safe**: Built to be shared and accessed quickly between threads
@@ -19,8 +20,7 @@ use global_cell::Cell;
 
 static MY_CELL: Cell<u32> = Cell::new();
 
-#[tokio::main]
-async fn main() {
+fn main() {
     // Set the cell value
     MY_CELL.set(42);
 
@@ -31,7 +31,7 @@ async fn main() {
 }
 ```
 
-### Working with Mutable Data
+### Working with Mutable Data (+ async)
 ```rust
 use global_cell::Cell;
 
@@ -41,13 +41,13 @@ async fn main() {
     cell.set("Hello".to_string());
 
     // Get a write lock and modify
-    let mut lock = cell.write_async().await;
+    let mut write_lock = cell.write_async().await;
     lock.push_str(" world");
     drop(lock); // lock.drop() is also available as a shortcut
 
     // Read the modified value
-    let lock = cell.read();
-    assert_eq!(*lock, "Hello world");
+    let read_lock = cell.read_async();
+    assert_eq!(*read_lcok, "Hello world");
 }
 ```
 
@@ -55,13 +55,12 @@ async fn main() {
 ```rust
 use global_cell::Cell;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let cell = Cell::new();
     cell.set(vec![1, 2, 3]);
 
     // Modify the value in place
-    cell.with_mut(|vec| {
+    cell.with_mut(|mut vec| {
         vec.push(4);
     });
 }
@@ -71,18 +70,17 @@ async fn main() {
 ```rust
 use global_cell::Cell;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let cell = Cell::new();
     cell.set(vec![1, 2, 3]);
 
-    let lock = cell.read();
+    let read_lock = cell.read();
     println!("{}", lock[0]);
 
     // Drop the lock so that we can acquire a write lock
     drop(lock);
 
-    let write_lock = cell.write();
+    let mut write_lock = cell.write();
     lock.push(4);
 }
 ```
@@ -106,13 +104,13 @@ async fn main() {
 
 ### Functional Access
 - `with(func)` - Apply a function to the value
-- `with_mut(func)` - Apply a function that requires a write lock to the value
+- `with_mut(func)` - Apply a funitialized
+- `is_init()` - synonym for is_initialized
+ction that requires a write lock to the value
 - `with_async(func)` - Apply an async function to the value, acquiring an async lock
 - `with_mut_async(func)` - Apply an async function that requires a write lock to the value, acquiring an async lock
 
 ### Status
-- `is_initialized()` - Check if the cell is initialized
-- `is_init()` - synonym for is_initialized
-
+- `is_initialized()` - Check if the cell is in
 ## License
 This project is licensed under the MIT License or Apache License 2.0, at your option.

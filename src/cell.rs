@@ -33,6 +33,11 @@ impl<T> CellLock<'_, T> {
     {
         self.lock.clone()
     }
+
+    /// Drops the lock.
+    pub fn drop(self) {
+        drop(self);
+    }
 }
 impl<T> Deref for CellLock<'_, T> {
     type Target = T;
@@ -50,6 +55,7 @@ impl<T: Debug> Debug for CellLock<'_, T> {
     }
 }
 impl<'a, T> From<RwLockReadGuard<'a, T>> for CellLock<'a, T> {
+    // private helper method to create from RwLockReadGuard
     fn from(lock: RwLockReadGuard<'a, T>) -> Self {
         Self { lock }
     }
@@ -90,6 +96,11 @@ impl<T> MutCellLock<'_, T> {
     {
         self.lock.clone()
     }
+
+    /// Drops the lock.
+    pub fn drop(self) {
+        drop(self);
+    }
 }
 impl<T> Deref for MutCellLock<'_, T> {
     type Target = T;
@@ -104,6 +115,7 @@ impl<T> DerefMut for MutCellLock<'_, T> {
     }
 }
 impl<'a, T> From<RwLockWriteGuard<'a, T>> for MutCellLock<'a, T> {
+    // private helper method to create from RwLockWriteGuard
     fn from(lock: RwLockWriteGuard<'a, T>) -> Self {
         Self { lock }
     }
@@ -143,6 +155,13 @@ impl<'a, T> CellMutexLock<'a, T> {
         self.lock.clone()
     }
 
+    /// Drops the lock.
+    pub fn drop(self) {
+        drop(self);
+    }
+}
+impl<'a, T> CellMutexLock<'a, T> {
+    // private helper method to create from MutexGuard
     fn from(lock: parking_lot::lock_api::MutexGuard<'a, parking_lot::RawMutex, T>) -> Self {
         Self { lock }
     }
@@ -244,7 +263,12 @@ impl<T: Send + Sync> Cell<T> {
         self.raw.init_async(f).await
     }
 
+    #[inline(always)]
     pub fn is_initialized(&self) -> bool {
+        self.raw.is_initialized()
+    }
+    #[inline(always)]
+    pub fn is_init(&self) -> bool {
         self.raw.is_initialized()
     }
 
@@ -398,6 +422,12 @@ impl<T: Send + Sync> Cell<Option<T>> {
         let mut lock = self.write();
         lock.take()
     }
+
+    /// Clears the cell, setting it to None.
+    pub fn clear(&self) {
+        let mut lock = self.write();
+        *lock = None;
+    }
 }
 impl<T: Send + Sync> Default for Cell<T> {
     /// Creates a new Cell with a default value.
@@ -454,22 +484,21 @@ impl<T: Send> MutexCell<T> {
             init_async_fn: Some(init_async_fn),
         }
     }
-    pub const fn default() -> Self 
-    where
-        T: Default
-    {
-        Self {
-            raw: RawMutexCell::new(),
-            init_fn: Some(T::default),
-            init_async_fn: None,
-        }
-    }
     pub const fn from(v: T) -> Self {
         Self {
             raw: RawMutexCell::from(v),
             init_fn: None,
             init_async_fn: None,
         }
+    }
+
+    #[inline(always)]
+    pub fn is_initialized(&self) -> bool {
+        self.raw.is_initialized()
+    }
+    #[inline(always)]
+    pub fn is_init(&self) -> bool {
+        self.raw.is_initialized()
     }
 
     pub fn init(&self, value: T) {
@@ -496,9 +525,6 @@ impl<T: Send> MutexCell<T> {
         Fut: std::future::Future<Output = T>
     {
         self.raw.init_async(f).await
-    }
-    pub fn is_initialized(&self) -> bool {
-        self.raw.is_initialized()
     }
 
     /// Attempt to initialize a cell. If it can't, an err is returned.
@@ -618,7 +644,7 @@ impl<T: Send> MutexCell<T> {
 
     /// Copy the inner value.
     /// Requires T: Copy.
-    pub fn copied(&self) -> T 
+    pub fn copy(&self) -> T 
     where
         T: Copy
     {
@@ -626,10 +652,27 @@ impl<T: Send> MutexCell<T> {
         *lock
     }
 }
+impl<T: Send> MutexCell<Option<T>> {
+    /// Takes the value out of the cell, leaving None in its place.
+    pub fn take(&self) -> Option<T> {
+        let mut lock = self.lock();
+        lock.take()
+    }
+
+    /// Clears the cell, setting it to None.
+    pub fn clear(&self) {
+        let mut lock = self.lock();
+        *lock = None;
+    }
+}
 impl<T: Send + Default> Default for MutexCell<T> {
     /// Creates a new MutexCell with a default value.
     fn default() -> Self {
-        Self::default()
+        Self {
+            raw: RawMutexCell::new(),
+            init_fn: Some(T::default),
+            init_async_fn: None,
+        }
     }
 }
 impl<T: Send + Debug> Debug for MutexCell<T> {
@@ -681,22 +724,21 @@ impl<T: Send + Sync> OnceCell<T> {
             init_async_fn: Some(init_async_fn),
         }
     }
-    pub const fn default() -> Self 
-    where
-        T: Default
-    {
-        Self {
-            raw: RawOnceCell::new(),
-            init_fn: Some(T::default),
-            init_async_fn: None,
-        }
-    }
     pub const fn from(v: T) -> Self {
         Self {
             raw: RawOnceCell::from(v),
             init_fn: None,
             init_async_fn: None,
         }
+    }
+
+    #[inline(always)]
+    pub fn is_initialized(&self) -> bool {
+        self.raw.is_initialized()
+    }
+    #[inline(always)]
+    pub fn is_init(&self) -> bool {
+        self.raw.is_initialized()
     }
 
     pub fn init(&self, value: T) {
@@ -724,14 +766,15 @@ impl<T: Send + Sync> OnceCell<T> {
     {
         self.raw.init_async(f).await
     }
-    pub fn is_initialized(&self) -> bool {
-        self.raw.is_initialized()
-    }
 }
 impl<T: Send + Sync + Default> Default for OnceCell<T> {
     /// Creates a new OnceCell with a default value.
     fn default() -> Self {
-        Self::default()
+        Self {
+            raw: RawOnceCell::new(),
+            init_fn: Some(T::default),
+            init_async_fn: None,
+        }
     }
 }
 impl<T: Send + Sync> OnceCell<T> {
